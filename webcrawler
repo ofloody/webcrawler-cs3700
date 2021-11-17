@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import socket
+import ssl
+
+
+#Function will produce a tls socket given the standard connected socket and hostname 
+def tls_socket(host, socket):
+
+    context = ssl.create_default_context()
+    tsl_socket = context.wrap_socket(socket, server_hostname=host)
+
+    return tsl_socket
+
+
+def parse_args():
+	# parse arguments asn and ports
+	parser = argparse.ArgumentParser()
+	parser.add_argument('username', type=str)
+	parser.add_argument('password', type=str)
+	args = parser.parse_args()
+
+	return args
+
+def recieve(s):
+    msg = ""
+    data= "notnull"
+    while "\r\n" not in msg and not data == "":
+        data = s.recv(8192).decode('utf8')
+        msg += data
+    return msg
+
+
+args = parse_args()
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect(("3.217.108.206", 443))
+
+s = tsl_socket("3.217.108.206", s)
+
+
+def get_page(page):
+	s.sendall(('GET ' + page + ' HTTPS/1.1\nHost: https://fakebook.3700.network/fakebook:443\n').encode())
+	response = recieve(s)
+	return response
+
+
+def post_attempts():
+	login_form0 = "<form action=\"https://fakebook.3700.network/accounts/login/?next=/fakebook/\">\n" + 
+	"<p>\n<label for=\"\">"
+
+	login_form = "<form method=\"post\" action=\"https://fakebook.3700.network/accounts/login/?next=/fakebook/\">\n" +
+	    "<p>\n<label for=\"id_username\">\nUsername:</label>\n <input type=\"text\" name=\"username\" autofocus="" autocapitalize=\"none\" autocomplete=\"username\" maxlength=\"150\" required=\"\" id=\"id_username\" value=\"floody.o\"></p>" +
+	"<p>\n<label for=\"id_password\">\nPassword:\n</label>\n <input type=\"password\" name=\"password\" autocomplete=\"current-password\" required=\"\" id=\"id_password\" value=\"VI0JWZN0VVAA3C5S\">\n</p>" +
+	"    <input type=\"hidden\" name=\"csrfmiddlewaretoken\" value=\"eTclw4fbk131aQyemizjThBCOJBdjfZkIhu5TFMaxG07sJoUocZhkTtvqStgCQgt\">" +
+	"    <input type=\"submit\" value=\"Log in\">" +
+	"    <input type=\"hidden\" name=\"next\" value=\"/fakebook/\">" +
+	"</form>" + "<script>document.forms[0].submit();</script>"
+	
+
+	s.sendall(('POST '))
+
+
+def main():
+	get_page()
+
+
+if __name__ == "__main__":
+    main()
+
+
