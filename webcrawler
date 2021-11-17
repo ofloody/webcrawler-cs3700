@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 
-import argparse
+from html.parser import HTMLParser
 import os
 import socket
 import ssl
+import sys
+import html
+
+PORT = 443
+HOST = "fakebook.3700.network"
+USER_NAME = sys.argv[1]
+PASSWORD = sys.argv[2]
+CSRF_TOKEN = ''
+
+# Function will produce a tls socket given the standard connected socket and hostname
 
 
-#Function will produce a tls socket given the standard connected socket and hostname 
 def tls_socket(host, socket):
 
     context = ssl.create_default_context()
@@ -15,59 +24,87 @@ def tls_socket(host, socket):
     return tsl_socket
 
 
-def parse_args():
-	# parse arguments asn and ports
-	parser = argparse.ArgumentParser()
-	parser.add_argument('username', type=str)
-	parser.add_argument('password', type=str)
-	args = parser.parse_args()
-
-	return args
-
 def recieve(s):
     msg = ""
-    data= "notnull"
+    data = "notnull"
     while "\r\n" not in msg and not data == "":
-        data = s.recv(8192).decode('utf8')
+        data = s.recv(8192).decode("utf8")
         msg += data
     return msg
 
 
-args = parse_args()
+def get_page(s, page):
+    s.sendall(
+        ("GET " + page + " HTTP/1.1\r\nHost:" + HOST + "\r\n\r\n").encode())
+    response = recieve(s)
+    return response
+
+
+def get_cookie_from_header(html):
+    split_html = html.split("\n")
+    for line in split_html:
+        if (len(line) > 11 and line[0:11] == 'Set-Cookie:'):
+            return line.split(';')[0].split('=')[1]
+
+
+class MyHTMLTokenParser(HTMLParser):
+
+    def handle_starttag(self, tag, attrs):
+        global CSRF_TOKEN
+
+        for i in range(len(attrs)):
+            if(attrs[i][1] == 'csrfmiddlewaretoken'):
+                CSRF_TOKEN = attrs[i+1][1]
+
+    # def handle_endtag(self, tag):
+    #     print("Encountered an end tag :", tag)
+
+    # def handle_data(self, data):
+    #     print("Encountered some data  :", data)
+
+
+token_parser = MyHTMLTokenParser()
+
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect(("3.217.108.206", 443))
+s.connect((HOST, PORT))
+s = tls_socket(HOST, s)
 
-s = tsl_socket("3.217.108.206", s)
+result = get_page(s, "/accounts/login/")
+token_parser.feed(result)
+COOKIE = get_cookie_from_header(result)
 
+data = "username=" + USER_NAME + "&password=" + PASSWORD + \
+    "&csrfmiddlewaretoken=" + CSRF_TOKEN + "next: /fakebook/" + "\n\n"
+header = (f"""
+POST /accounts/login/ HTTP/1.1
+Host: {HOST}
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Cookie: csrftoken={COOKIE}
+""")
+contentLength = "Content-Length: " + str(len(data)) + "\n\n"
+LOGIN_MSG = header + contentLength + data
 
-def get_page(page):
-	s.sendall(('GET ' + page + ' HTTPS/1.1\nHost: https://fakebook.3700.network/fakebook:443\n').encode())
-	response = recieve(s)
-	return response
+# print(LOGIN_MSG)
+s.sendall(LOGIN_MSG.encode())
+print(recieve(s))
 
+# secret_flags = []
+# visited_pages = []
+# pages_to_visit = []
 
-def post_attempts():
-	login_form0 = "<form action=\"https://fakebook.3700.network/accounts/login/?next=/fakebook/\">\n" + 
-	"<p>\n<label for=\"\">"
+# while len(secret_flags) < 5:
+# pop pages to visit
+# if it"s in visited pages skip to next loop
+# else add to visited pages
+# fetch html
+# walk throug html
+# if it"s a secret flag print it and add to secret flags
+# if it"s a link add to pages to visit
+# else don"t care keep ggoing
 
-	login_form = "<form method=\"post\" action=\"https://fakebook.3700.network/accounts/login/?next=/fakebook/\">\n" +
-	    "<p>\n<label for=\"id_username\">\nUsername:</label>\n <input type=\"text\" name=\"username\" autofocus="" autocapitalize=\"none\" autocomplete=\"username\" maxlength=\"150\" required=\"\" id=\"id_username\" value=\"floody.o\"></p>" +
-	"<p>\n<label for=\"id_password\">\nPassword:\n</label>\n <input type=\"password\" name=\"password\" autocomplete=\"current-password\" required=\"\" id=\"id_password\" value=\"VI0JWZN0VVAA3C5S\">\n</p>" +
-	"    <input type=\"hidden\" name=\"csrfmiddlewaretoken\" value=\"eTclw4fbk131aQyemizjThBCOJBdjfZkIhu5TFMaxG07sJoUocZhkTtvqStgCQgt\">" +
-	"    <input type=\"submit\" value=\"Log in\">" +
-	"    <input type=\"hidden\" name=\"next\" value=\"/fakebook/\">" +
-	"</form>" + "<script>document.forms[0].submit();</script>"
-	
-
-	s.sendall(('POST '))
-
-
-def main():
-	get_page()
-
-
-if __name__ == "__main__":
-    main()
-
-
+# socket.sendall(LOGIN_REQUEST.encode())
+# print(socket.recv(65535).decode())
