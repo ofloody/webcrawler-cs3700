@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+# from bs4 import BeautifulSoup
 from html.parser import HTMLParser
 import os
 import socket
@@ -11,7 +12,9 @@ PORT = 443
 HOST = "fakebook.3700.network"
 USER_NAME = sys.argv[1]
 PASSWORD = sys.argv[2]
-CSRF_TOKEN = ''
+CSRF_MIDDLEWARE_TOKEN = ''
+CSRF_COOKIE = ''
+SESSION_ID = ''
 
 # Function will produce a tls socket given the standard connected socket and hostname
 
@@ -34,33 +37,44 @@ def recieve(s):
 
 
 def get_page(s, page):
-    s.sendall(
-        ("GET " + page + " HTTP/1.1\r\nHost:" + HOST + "\r\n\r\n").encode())
+    global HOST
+    global CSRF_COOKIE
+    global SESSION_ID
+
+    msg = (f"""
+    GET {page} HTTP/1.1
+    Host: {HOST}
+    Connection: keep-alive
+    Cookie: csrftoken={CSRF_COOKIE}; sessionid={SESSION_ID}
+    """)
+
+    s.sendall(msg.encode())
     response = recieve(s)
     return response
 
 
-def get_cookie_from_header(html):
+def get_cookies_from_header(html):
+	global CSRF_COOKIE
+	global SESSION_ID
+
     split_html = html.split("\n")
     for line in split_html:
         if (len(line) > 11 and line[0:11] == 'Set-Cookie:'):
-            return line.split(';')[0].split('=')[1]
+            cookie_pair = line.split(';')[0].split('=')
+			if(cookie_pair[0].splitt(' ') == 'sessionid'):
+				SESSION_ID = cookie_pair[1]
+			elif(cookie_pair[0].splitt(' ') == 'csrftoken'):
+				CSRF_COOKIE = cookie_pair[1]
 
 
 class MyHTMLTokenParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
-        global CSRF_TOKEN
+        global CSRF_MIDDLEWARE_TOKEN
 
         for i in range(len(attrs)):
             if(attrs[i][1] == 'csrfmiddlewaretoken'):
-                CSRF_TOKEN = attrs[i+1][1]
-
-    # def handle_endtag(self, tag):
-    #     print("Encountered an end tag :", tag)
-
-    # def handle_data(self, data):
-    #     print("Encountered some data  :", data)
+                CSRF_MIDDLEWARE_TOKEN = attrs[i+1][1]
 
 
 token_parser = MyHTMLTokenParser()
@@ -70,25 +84,28 @@ s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.connect((HOST, PORT))
 s = tls_socket(HOST, s)
 
-result = get_page(s, "/accounts/login/")
-token_parser.feed(result)
-COOKIE = get_cookie_from_header(result)
+s.sendall(("GET /accounts/login/ HTTP/1.1\r\nHost:" +
+          HOST + "\r\n\r\n").encode())
+initial_get_result = recieve(s)
+token_parser.feed(initial_get_result)
+CSRF_COOKIE = get_cookie_from_header(initial_get_result)
 
 data = "username=" + USER_NAME + "&password=" + PASSWORD + \
-    "&csrfmiddlewaretoken=" + CSRF_TOKEN + "next: /fakebook/" + "\n\n"
+    "&csrfmiddlewaretoken=" + CSRF_MIDDLEWARE_TOKEN + "&next=/fakebook/" + "\n\n"
 header = (f"""
 POST /accounts/login/ HTTP/1.1
 Host: {HOST}
+Origin: https://fakebook.3700.network
+Referer: https://fakebook.3700.network/accounts/login/?next=/fakebook/
 Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
 Accept-Language: en-US,en;q=0.5
 Connection: keep-alive
 Content-Type: application/x-www-form-urlencoded
-Cookie: csrftoken={COOKIE}
+Cookie: csrftoken={CSRF_COOKIE}
 """)
 contentLength = "Content-Length: " + str(len(data)) + "\n\n"
 LOGIN_MSG = header + contentLength + data
 
-# print(LOGIN_MSG)
 s.sendall(LOGIN_MSG.encode())
 print(recieve(s))
 
