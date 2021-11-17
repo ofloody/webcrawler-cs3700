@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup
 from html.parser import HTMLParser
 import os
 import socket
@@ -42,11 +42,14 @@ def get_page(s, page):
     global SESSION_ID
 
     msg = (f"""
-    GET {page} HTTP/1.1
-    Host: {HOST}
-    Connection: keep-alive
-    Cookie: csrftoken={CSRF_COOKIE}; sessionid={SESSION_ID}
+GET {page} HTTP/1.1
+Host: {HOST}
+Connection: keep-alive
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.54 Safari/537.36
+Cookie: csrftoken={CSRF_COOKIE}; sessionid={SESSION_ID}\n\n
     """)
+
+    print(msg)
 
     s.sendall(msg.encode())
     response = recieve(s)
@@ -54,18 +57,17 @@ def get_page(s, page):
 
 
 def get_cookies_from_header(html):
-	global CSRF_COOKIE
-	global SESSION_ID
+    global CSRF_COOKIE
+    global SESSION_ID
 
     split_html = html.split("\n")
     for line in split_html:
         if (len(line) > 11 and line[0:11] == 'Set-Cookie:'):
             cookie_pair = line.split(';')[0].split('=')
-			if(cookie_pair[0].splitt(' ') == 'sessionid'):
-				SESSION_ID = cookie_pair[1]
-			elif(cookie_pair[0].splitt(' ') == 'csrftoken'):
-				CSRF_COOKIE = cookie_pair[1]
-
+            if(cookie_pair[0].split(' ')[1] == 'sessionid'):
+                SESSION_ID = cookie_pair[1]
+            elif(cookie_pair[0].split(' ')[1] == 'csrftoken'):
+                CSRF_COOKIE = cookie_pair[1]
 
 class MyHTMLTokenParser(HTMLParser):
 
@@ -88,7 +90,7 @@ s.sendall(("GET /accounts/login/ HTTP/1.1\r\nHost:" +
           HOST + "\r\n\r\n").encode())
 initial_get_result = recieve(s)
 token_parser.feed(initial_get_result)
-CSRF_COOKIE = get_cookie_from_header(initial_get_result)
+get_cookies_from_header(initial_get_result)
 
 data = "username=" + USER_NAME + "&password=" + PASSWORD + \
     "&csrfmiddlewaretoken=" + CSRF_MIDDLEWARE_TOKEN + "&next=/fakebook/" + "\n\n"
@@ -107,14 +109,43 @@ contentLength = "Content-Length: " + str(len(data)) + "\n\n"
 LOGIN_MSG = header + contentLength + data
 
 s.sendall(LOGIN_MSG.encode())
-print(recieve(s))
+login_response = recieve(s)
 
-# secret_flags = []
-# visited_pages = []
-# pages_to_visit = []
+get_cookies_from_header(login_response)
 
-# while len(secret_flags) < 5:
-# pop pages to visit
+redirected_page = "/fakebook/"
+
+secret_flags = []
+visited_pages = []
+pages_to_visit = [redirected_page]
+
+while len(secret_flags) < 5 or len(pages_to_visit) == 0:
+	curr_page = pages_to_visit.pop(0)
+	curr_page_html = get_page(s, curr_page)
+	get_cookies_from_header(curr_page_html)
+w
+	
+	soup = BeautifulSoup(curr_page_html, 'html.parser')
+
+	print(soup.prettify())
+
+	for tag in soup.find_all("h2", "secret_flag"):
+		#handel secret flag
+		print(tag)
+
+	for link in soup.find_all('a'):
+		#check and maybe add 
+		print(link)
+		href = link['href']
+
+		if href not in visited_pages and href != "/" and href != "/accounts/logout/":
+			#check if routing to fakebook
+			pages_to_visit.append(href)
+
+
+
+
+
 # if it"s in visited pages skip to next loop
 # else add to visited pages
 # fetch html
