@@ -53,7 +53,6 @@ User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (
 Cookie: csrftoken={CSRF_COOKIE}; sessionid={SESSION_ID}\n
 """)
 
-    # print(msg)
     while(True):
         try:
             s.sendall(msg.encode())
@@ -65,11 +64,11 @@ Cookie: csrftoken={CSRF_COOKIE}; sessionid={SESSION_ID}\n
     return response
 
 
-def get_cookies_from_header(html):
+def get_cookies_from_header(response_html):
     global CSRF_COOKIE
     global SESSION_ID
 
-    split_html = html.split("\n")
+    split_html = response_html.split("\n")
     for line in split_html:
         if (len(line) > 11 and line[0:11] == 'Set-Cookie:'):
             cookie_pair = line.split(';')[0].split('=')
@@ -77,6 +76,16 @@ def get_cookies_from_header(html):
                 SESSION_ID = cookie_pair[1]
             elif(cookie_pair[0].split(' ')[1] == 'csrftoken'):
                 CSRF_COOKIE = cookie_pair[1]
+        elif(len(line) == 0):
+        	return
+
+
+def get_location_from_header(response_html):
+	split_html = response_html.split("\n")
+	for line in split_html:
+		if (len(line) > 9 and line[0:9] == 'Location:'):
+			return line.split(' ')[1]
+            
 
 
 def find_attr(attrs, attr_name):
@@ -84,6 +93,15 @@ def find_attr(attrs, attr_name):
         if(attrs[i][0] == attr_name):
             return attrs[i]
     return None
+
+
+def get_status_code(response_html):
+	try:
+		split_html = response_html.split("\n")
+		response_line = split_html[0]
+		return response_line.split(' ')[1]
+	except (IndexError):
+		print(response_html)
 
 
 class HTMLTokenParser(HTMLParser):
@@ -126,7 +144,6 @@ s.sendall(LOGIN_MSG.encode())
 login_response = recieve(s)
 
 get_cookies_from_header(login_response)
-
 redirected_page = "/fakebook/"
 
 
@@ -144,13 +161,12 @@ class HTMLMainParser(HTMLParser):
 
         if tag == 'h2':
             h2_class = find_attr(attrs, "class")
-            print(tag, attrs)
             if h2_class and h2_class[1] == 'secret_flag':
                 CATCH_SECRET = True
 
         elif tag == 'a':
             href = find_attr(attrs, "href")
-            if href and href[1] != '/accounts/logout/' and (href[1] not in visited_pages) and (href[1] not in pages_to_visit) and href[1].startswith("/"):
+            if href and (href[1] not in visited_pages) and (href[1] not in pages_to_visit) and href[1].startswith("/fakebook/"):
                 pages_to_visit.append(href[1])
 
     def handle_data(self, data):
@@ -165,13 +181,8 @@ class HTMLMainParser(HTMLParser):
 
 main_parser = HTMLMainParser()
 
-count = 0
-
 while len(secret_flags) < 5 and len(pages_to_visit) > 0:
     curr_page = pages_to_visit.pop(0)
-    count += 1
-    print(curr_page, count)
-    visited_pages.append(curr_page)
 
     while(True):
         try:
@@ -181,9 +192,16 @@ while len(secret_flags) < 5 and len(pages_to_visit) > 0:
             print("repoening socket")
             s = open_socket()
 
-    # check response type, only add to visited_pages if it's a 200/302
-    get_cookies_from_header(curr_page_html)
-    main_parser.feed(curr_page_html)
+    status_code = get_status_code(curr_page_html)
+    if status_code == '500':
+    	pages_to_visit.append(curr_page)
+    elif status_code == '302':
+    	visited_pages.append(curr_page)
+    	pages_to_visit.append(get_location_from_header(curr_page_html))
+    elif status_code == '200':
+    	visited_pages.append(curr_page)
+    	get_cookies_from_header(curr_page_html)
+    	main_parser.feed(curr_page_html)
 
 print('finishd crawling')
 
