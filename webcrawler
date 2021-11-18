@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
-from bs4 import BeautifulSoup
 from html.parser import HTMLParser
-import os
 import socket
 import ssl
 import sys
@@ -16,21 +14,22 @@ CSRF_MIDDLEWARE_TOKEN = ''
 CSRF_COOKIE = ''
 SESSION_ID = ''
 
-# Function will produce a tls socket given the standard connected socket and hostname
-
 
 def tls_socket(host, socket):
+    # Function will produce a tls socket given the standard connected socket and hostname
 
     context = ssl.create_default_context()
     tsl_socket = context.wrap_socket(socket, server_hostname=host)
 
     return tsl_socket
 
+
 def open_socket():
-	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	s.connect((HOST, PORT))
-	s = tls_socket(HOST, s)
-	return s
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((HOST, PORT))
+    s = tls_socket(HOST, s)
+    return s
+
 
 def recieve(s):
     msg = ""
@@ -54,13 +53,13 @@ User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (
 Cookie: csrftoken={CSRF_COOKIE}; sessionid={SESSION_ID}\n
 """)
 
-    #print(msg)
+    # print(msg)
     while(True):
-    	try:
-    		s.sendall(msg.encode())
-    		break
-    	except (RuntimeError, ValueError):
-    		s = open_socket()
+        try:
+            s.sendall(msg.encode())
+            break
+        except (RuntimeError, ValueError):
+            s = open_socket()
 
     response = recieve(s)
     return response
@@ -80,8 +79,14 @@ def get_cookies_from_header(html):
                 CSRF_COOKIE = cookie_pair[1]
 
 
+def find_attr(attrs, attr_name):
+    for i in range(len(attrs)):
+        if(attrs[i][0] == attr_name):
+            return attrs[i]
+    return None
 
-class MyHTMLTokenParser(HTMLParser):
+
+class HTMLTokenParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         global CSRF_MIDDLEWARE_TOKEN
@@ -91,11 +96,9 @@ class MyHTMLTokenParser(HTMLParser):
                 CSRF_MIDDLEWARE_TOKEN = attrs[i+1][1]
 
 
-token_parser = MyHTMLTokenParser()
+token_parser = HTMLTokenParser()
 
-
-
-s = open_socket();
+s = open_socket()
 
 s.sendall(("GET /accounts/login/ HTTP/1.1\r\nHost:" +
           HOST + "\r\n\r\n").encode())
@@ -130,55 +133,65 @@ redirected_page = "/fakebook/"
 secret_flags = []
 visited_pages = ["/accounts/logout/", "/"]
 pages_to_visit = [redirected_page]
+CATCH_SECRET = False
+
+
+class HTMLMainParser(HTMLParser):
+    def handle_starttag(self, tag, attrs):
+        global pages_to_visit
+        global visited_pages
+        global CATCH_SECRET
+
+        if tag == 'h2':
+            h2_class = find_attr(attrs, "class")
+            print(tag, attrs)
+            if h2_class and h2_class[1] == 'secret_flag':
+                CATCH_SECRET = True
+
+        elif tag == 'a':
+            href = find_attr(attrs, "href")
+            if href and href[1] != '/accounts/logout/' and (href[1] not in visited_pages) and (href[1] not in pages_to_visit) and href[1].startswith("/"):
+                pages_to_visit.append(href[1])
+
+    def handle_data(self, data):
+        global secret_flags
+        global CATCH_SECRET
+
+        if CATCH_SECRET:
+            print("Found a secret! ", data)
+            secret_flags.append(data)
+            CATCH_SECRET = False
+
+
+main_parser = HTMLMainParser()
+
+count = 0
 
 while len(secret_flags) < 5 and len(pages_to_visit) > 0:
-	curr_page = pages_to_visit.pop(0)
-	visited_pages.append(curr_page)
-	#print(pages_to_visit)
-	#print(curr_page)
+    curr_page = pages_to_visit.pop(0)
+    count += 1
+    print(curr_page, count)
+    visited_pages.append(curr_page)
 
+    while(True):
+        try:
+            curr_page_html = get_page(s, curr_page)
+            break
+        except (RuntimeError, ValueError, ssl.SSLZeroReturnError):
+            print("repoening socket")
+            s = open_socket()
 
-	while(True):
-		try:
-			curr_page_html = get_page(s, curr_page)
-			break
-		except (RuntimeError, ValueError):
-			s = open_socket()
+    # check response type, only add to visited_pages if it's a 200/302
+    get_cookies_from_header(curr_page_html)
+    main_parser.feed(curr_page_html)
 
-	get_cookies_from_header(curr_page_html)
-
-	
-	soup = BeautifulSoup(curr_page_html, 'html.parser')
-
-	#print(soup.prettify())
-	#print(curr_page)
-
-	for tag in soup.find_all("h2", "secret_flag"):
-		#handel secret flag
-		print(tag)
-		flag_contents = tag.contents
-		flag = flag_contents[5:]
-		secret_flags.append(flag)
-
-	for link in soup.find_all('a'):
-		#check and maybe add 
-		#print(link)
-		href = link['href']
-
-		if (href not in visited_pages) and (href not in pages_to_visit) and href.startswith("/"):
-			#check if routing to fakebook
-			pages_to_visit.append(href)
-
-
+print('finishd crawling')
 
 for flag in secret_flags:
-	print(flag)
+    print(flag)
 
 
 s.close()
-
-
-
 
 
 # if it"s in visited pages skip to next loop
