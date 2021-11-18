@@ -26,6 +26,11 @@ def tls_socket(host, socket):
 
     return tsl_socket
 
+def open_socket():
+	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	s.connect((HOST, PORT))
+	s = tls_socket(HOST, s)
+	return s
 
 def recieve(s):
     msg = ""
@@ -46,12 +51,17 @@ GET {page} HTTP/1.1
 Host: {HOST}
 Connection: keep-alive
 User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.54 Safari/537.36
-Cookie: csrftoken={CSRF_COOKIE}; sessionid={SESSION_ID}\n\n
-    """)
+Cookie: csrftoken={CSRF_COOKIE}; sessionid={SESSION_ID}\n
+""")
 
-    print(msg)
+    #print(msg)
+    while(True):
+    	try:
+    		s.sendall(msg.encode())
+    		break
+    	except (RuntimeError, ValueError):
+    		s = open_socket()
 
-    s.sendall(msg.encode())
     response = recieve(s)
     return response
 
@@ -69,6 +79,8 @@ def get_cookies_from_header(html):
             elif(cookie_pair[0].split(' ')[1] == 'csrftoken'):
                 CSRF_COOKIE = cookie_pair[1]
 
+
+
 class MyHTMLTokenParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
@@ -82,9 +94,8 @@ class MyHTMLTokenParser(HTMLParser):
 token_parser = MyHTMLTokenParser()
 
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect((HOST, PORT))
-s = tls_socket(HOST, s)
+
+s = open_socket();
 
 s.sendall(("GET /accounts/login/ HTTP/1.1\r\nHost:" +
           HOST + "\r\n\r\n").encode())
@@ -115,32 +126,56 @@ get_cookies_from_header(login_response)
 
 redirected_page = "/fakebook/"
 
+
 secret_flags = []
-visited_pages = []
+visited_pages = ["/accounts/logout/", "/"]
 pages_to_visit = [redirected_page]
 
-while len(secret_flags) < 5 or len(pages_to_visit) == 0:
+while len(secret_flags) < 5 and len(pages_to_visit) > 0:
 	curr_page = pages_to_visit.pop(0)
-	curr_page_html = get_page(s, curr_page)
+	visited_pages.append(curr_page)
+	#print(pages_to_visit)
+	#print(curr_page)
+
+
+	while(True):
+		try:
+			curr_page_html = get_page(s, curr_page)
+			break
+		except (RuntimeError, ValueError):
+			s = open_socket()
+
 	get_cookies_from_header(curr_page_html)
-w
+
 	
 	soup = BeautifulSoup(curr_page_html, 'html.parser')
 
-	print(soup.prettify())
+	#print(soup.prettify())
+	#print(curr_page)
 
 	for tag in soup.find_all("h2", "secret_flag"):
 		#handel secret flag
 		print(tag)
+		flag_contents = tag.contents
+		flag = flag_contents[5:]
+		secret_flags.append(flag)
 
 	for link in soup.find_all('a'):
 		#check and maybe add 
-		print(link)
+		#print(link)
 		href = link['href']
 
-		if href not in visited_pages and href != "/" and href != "/accounts/logout/":
+		if (href not in visited_pages) and (href not in pages_to_visit) and href.startswith("/"):
 			#check if routing to fakebook
 			pages_to_visit.append(href)
+
+
+
+for flag in secret_flags:
+	print(flag)
+
+
+s.close()
 
 
 
