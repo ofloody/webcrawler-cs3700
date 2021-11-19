@@ -77,15 +77,14 @@ def get_cookies_from_header(response_html):
             elif(cookie_pair[0].split(' ')[1] == 'csrftoken'):
                 CSRF_COOKIE = cookie_pair[1]
         elif(len(line) == 0):
-        	return
+            return
 
 
 def get_location_from_header(response_html):
-	split_html = response_html.split("\n")
-	for line in split_html:
-		if (len(line) > 9 and line[0:9] == 'Location:'):
-			return line.split(' ')[1]
-            
+    split_html = response_html.split("\n")
+    for line in split_html:
+        if (len(line) > 9 and line[0:9] == 'Location:'):
+            return line.split(' ')[1]
 
 
 def find_attr(attrs, attr_name):
@@ -96,12 +95,23 @@ def find_attr(attrs, attr_name):
 
 
 def get_status_code(response_html):
-	try:
-		split_html = response_html.split("\n")
-		response_line = split_html[0]
-		return response_line.split(' ')[1]
-	except (IndexError):
-		print(response_html)
+    try:
+        split_html = response_html.split("\n")
+        response_line = split_html[0]
+        return response_line.split(' ')[1]
+    except (IndexError):
+        return None
+
+
+def send_until_succeess(s, msg):
+    response = ''
+    status_code = ''
+    while status_code != '200' and status_code != '302':
+        s.sendall(msg.encode())
+        response = recieve(s)
+        status_code = get_status_code(response)
+
+    return response
 
 
 class HTMLTokenParser(HTMLParser):
@@ -118,9 +128,8 @@ token_parser = HTMLTokenParser()
 
 s = open_socket()
 
-s.sendall(("GET /accounts/login/ HTTP/1.1\r\nHost:" +
-          HOST + "\r\n\r\n").encode())
-initial_get_result = recieve(s)
+INIT_GET_MSG = "GET /accounts/login/ HTTP/1.1\r\nHost:" + HOST + "\r\n\r\n"
+initial_get_result = send_until_succeess(s, INIT_GET_MSG)
 token_parser.feed(initial_get_result)
 get_cookies_from_header(initial_get_result)
 
@@ -140,8 +149,7 @@ Cookie: csrftoken={CSRF_COOKIE}
 contentLength = "Content-Length: " + str(len(data)) + "\n\n"
 LOGIN_MSG = header + contentLength + data
 
-s.sendall(LOGIN_MSG.encode())
-login_response = recieve(s)
+login_response = send_until_succeess(s, LOGIN_MSG)
 
 get_cookies_from_header(login_response)
 redirected_page = "/fakebook/"
@@ -174,7 +182,6 @@ class HTMLMainParser(HTMLParser):
         global CATCH_SECRET
 
         if CATCH_SECRET:
-            print("Found a secret! ", data)
             secret_flags.append(data)
             CATCH_SECRET = False
 
@@ -189,36 +196,21 @@ while len(secret_flags) < 5 and len(pages_to_visit) > 0:
             curr_page_html = get_page(s, curr_page)
             break
         except (RuntimeError, ValueError, ssl.SSLZeroReturnError):
-            print("repoening socket")
             s = open_socket()
 
     status_code = get_status_code(curr_page_html)
     if status_code == '500':
-    	pages_to_visit.append(curr_page)
+        pages_to_visit.append(curr_page)
     elif status_code == '302':
-    	visited_pages.append(curr_page)
-    	pages_to_visit.append(get_location_from_header(curr_page_html))
+        visited_pages.append(curr_page)
+        pages_to_visit.append(get_location_from_header(curr_page_html))
     elif status_code == '200':
-    	visited_pages.append(curr_page)
-    	get_cookies_from_header(curr_page_html)
-    	main_parser.feed(curr_page_html)
-
-print('finishd crawling')
+        visited_pages.append(curr_page)
+        get_cookies_from_header(curr_page_html)
+        main_parser.feed(curr_page_html)
 
 for flag in secret_flags:
     print(flag)
 
 
 s.close()
-
-
-# if it"s in visited pages skip to next loop
-# else add to visited pages
-# fetch html
-# walk throug html
-# if it"s a secret flag print it and add to secret flags
-# if it"s a link add to pages to visit
-# else don"t care keep ggoing
-
-# socket.sendall(LOGIN_REQUEST.encode())
-# print(socket.recv(65535).decode())
