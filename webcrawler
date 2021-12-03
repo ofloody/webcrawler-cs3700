@@ -195,7 +195,7 @@ while len(secret_flags) < 5 and len(pages_to_visit) > 0:
         try:
             curr_page_html = get_page(s, curr_page)
             break
-        except (RuntimeError, ValueError, ssl.SSLZeroReturnError):
+        except (RuntimeError, ValueError, ssl.SSLZeroReturnError, BrokenPipeError):
             s = open_socket()
 
     status_code = get_status_code(curr_page_html)
